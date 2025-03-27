@@ -1,6 +1,5 @@
 use transpose::transpose;
 
-// --------------------------------------------------
 fn main() {
     let range: Vec<u32> = (33..=127).collect();
     let mut nums = vec![0; 95];
@@ -9,7 +8,8 @@ fn main() {
         .iter()
         .map(|i| {
             format!(
-                "{i:3}: {}",
+                "{:3}: {}",
+                i,
                 if *i == 127 {
                     "DEL".to_string()
                 } else {
@@ -18,7 +18,6 @@ fn main() {
             )
         })
         .collect();
-
     let rows: Vec<&[String]> = vals.chunks(5).collect();
     for row in rows {
         println!("{}", row.join("\t"));

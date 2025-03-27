@@ -2,13 +2,10 @@
 name = "echor"
 version = "0.1.0"
 edition = "2021"
-authors = [ "Ken Youens-Clark <kyclark@gmail.com>" ]
 
 [dependencies]
-clap = { version = "4.5.0", features = ["derive"] }
+clap = "2.33"
 
 [dev-dependencies]
-anyhow = "1.0.79"
-assert_cmd = "2.0.13"
-predicates = "3.0.4"
-pretty_assertions = "1.4.0"
+assert_cmd = "2"
+predicates = "2"

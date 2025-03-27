@@ -1,6 +1,7 @@
-==> tests/inputs/twelve.txt <==
-even
-twelve
+==> tests/inputs/ten.txt <==
+ht
+nine
+ten
 
 ==> tests/inputs/empty.txt <==
 
