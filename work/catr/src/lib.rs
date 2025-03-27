@@ -1,10 +1,12 @@
 use clap::{App, Arg};
 use std::error::Error;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 
 #[derive(Debug)]
 pub struct Config {
     files: Vec<String>,
-    numper_lines: bool,
+    number_lines: bool,
     number_nonblank_lines: bool,
 }
 
@@ -12,7 +14,21 @@ type MyResult<T> = Result<T, Box<dyn Error>>;
 
 pub fn run(config: Config) -> MyResult<()> {
     for filename in config.files {
-        println!("{}", filename);
+        match open(&filename) {
+            Err(err) => eprintln!("Failed to open {}: {}", filename, err),
+            Ok(buf_read) => {
+                let mut line_number = 1;
+                for line in buf_read.lines() {
+                    let line = line?;
+                    if config.number_lines || (config.number_nonblank_lines && !line.is_empty()) {
+                        println!("{:>6}\t{}", line_number, line);
+                        line_number += 1;
+                    } else {
+                        println!("{}", line);
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -48,7 +64,14 @@ pub fn get_args() -> MyResult<Config> {
 
     Ok(Config {
         files: matches.values_of_lossy("files").unwrap(),
-        numper_lines: matches.is_present("number"),
+        number_lines: matches.is_present("number"),
         number_nonblank_lines: matches.is_present("number_nonblank"),
     })
+}
+
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
 }
