@@ -21,12 +21,21 @@ pub struct Config {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    for path in config.paths {
+    for path in &config.paths {
         for entry in WalkDir::new(path) {
             match entry {
                 Err(e) => eprintln!("{}", e),
                 Ok(entry) => {
-                    println!("{}", entry.path().display())
+                    if !&config.names.is_empty() {
+                        for name in &config.names {
+                            if name.is_match(entry.file_name().to_str().unwrap()) {
+                                println!("{}", entry.path().display());
+                                break;
+                            }       
+                        }
+                    } else {
+                        println!("{}", entry.path().display());
+                    }
                 }
             }
         }
