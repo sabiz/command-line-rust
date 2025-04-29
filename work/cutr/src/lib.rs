@@ -1,6 +1,7 @@
 use crate::Extract::*;
 use clap::{App, Arg};
-use std::{default, error::Error, ops::Range};
+use core::num;
+use std::{cmp::max, default, error::Error, ops::Range};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 type PositionList = Vec<Range<usize>>;
@@ -82,12 +83,72 @@ pub fn get_args() -> MyResult<Config> {
     })
 }
 
-
-fn parse_pos(range: &str) -> MyResult<PositionList> {
-    unimplemented!();
+fn parse_number(value: &str) -> MyResult<usize> {
+    match value.parse::<usize>() {
+        Ok(num) => {
+            if num == 0 {
+                return Err("".into());
+            }
+            Ok(num)
+        }
+        Err(_) => {
+            return Err("".into());
+        }
+        
+    }
 }
 
+fn parse_pos(range: &str) -> MyResult<PositionList> {
+    println!("---\nrange: {}", range);
+    if range.is_empty() {
+        return Err("empty string".into());
+    }
+    
+    let mut result:PositionList = vec![];
+    for value in range.split(',').map(|s| s.trim()) {
+        println!("value: {}", value);
+        if value.is_empty() || value.contains(|c: char| !c.is_numeric() && c != '-') {
+            return Err(format!("illegal list value: \"{}\"", value).into());
+        }
 
+        let separated_value = value.split('-').collect::<Vec<_>>();
+        if separated_value.len() > 2
+            || separated_value[0].starts_with('+')
+            || (separated_value.len() > 1 && separated_value[1].starts_with('+'))
+        {
+            return Err(format!("illegal list value: \"{}\"", value).into());
+        }
+
+        println!("separated_value: {:?}", separated_value);
+        let mut start_end = vec![0,0];
+        if separated_value.len() == 1 {
+            let number_value = parse_number(separated_value[0]).map_err(|_| {
+                format!("illegal list value: \"{}\"", separated_value[0])
+            })?;
+            start_end[0] = number_value;
+            start_end[1] = number_value;
+        }else if separated_value.len() == 2 {
+            for (i, v) in separated_value.iter().enumerate() {
+                let number_value = parse_number(v).map_err(|_| {
+                    format!("illegal list value: \"{}\"", v)
+                })?;
+                start_end[i] = number_value;
+            }
+        }
+        println!("start_end: {:?}", start_end);
+        if separated_value.len() == 2 && start_end[0] >= start_end[1] {
+            return Err(format!(
+                "First number in range ({}) must be lower than second number ({})",
+                start_end[0], start_end[1]
+            )
+            .into());
+        }
+        start_end[0] -= 1;
+        println!("result start_end: {:?}", start_end);
+        result.push(start_end[0]..start_end[1]);
+    }
+    Ok(result)
+}
 
 #[cfg(test)]
 mod unit_tests {
@@ -114,7 +175,10 @@ mod unit_tests {
 
         let rest = parse_pos("+1-2");
         assert!(rest.is_err());
-        assert_eq!(rest.unwrap_err().to_string(), "illegal list value: \"+1-2\"",);
+        assert_eq!(
+            rest.unwrap_err().to_string(),
+            "illegal list value: \"+1-2\"",
+        );
 
         let res = parse_pos("1-+2");
         assert!(res.is_err());
@@ -159,11 +223,17 @@ mod unit_tests {
         //最初の数字は２番目より小さい必要がある
         let res = parse_pos("1-1");
         assert!(res.is_err());
-        assert_eq!(res.unwrap_err().to_string(), "First number in range (1) must be lower than second number (1)",);
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "First number in range (1) must be lower than second number (1)",
+        );
 
         let res = parse_pos("2-1");
         assert!(res.is_err());
-        assert_eq!(res.unwrap_err().to_string(), "First number in range (2) must be lower than second number (1)",);
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "First number in range (2) must be lower than second number (1)",
+        );
 
         // 以下のケースは受け入れられる
         let res = parse_pos("1");
@@ -197,6 +267,5 @@ mod unit_tests {
         let res = parse_pos("15, 19-20");
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), vec![14..15, 18..20]);
-        
     }
 }
