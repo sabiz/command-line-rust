@@ -1,7 +1,7 @@
 use crate::Extract::*;
 use clap::{App, Arg};
 use core::{num, prelude::v1};
-use std::{cmp::max, default, error::Error, ops::Range};
+use std::{cmp::max, default, error::Error, num::NonZeroUsize, ops::Range};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 type PositionList = Vec<Range<usize>>;
@@ -107,8 +107,8 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 fn parse_number(value: &str) -> MyResult<usize> {
-    match value.parse::<usize>() {
-        Ok(n) if n > 0 => Ok(n),
+    match value.parse::<NonZeroUsize>() {
+        Ok(n) => Ok(n.into()),
         _ => Err(format!("illegal list value: \"{}\"", value).into()),
     }
 }
