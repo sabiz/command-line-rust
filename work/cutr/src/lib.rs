@@ -1,6 +1,6 @@
 use crate::Extract::*;
 use clap::{App, Arg};
-use core::num;
+use core::{num, prelude::v1};
 use std::{cmp::max, default, error::Error, ops::Range};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -85,68 +85,61 @@ pub fn get_args() -> MyResult<Config> {
 
 fn parse_number(value: &str) -> MyResult<usize> {
     match value.parse::<usize>() {
-        Ok(num) => {
-            if num == 0 {
-                return Err("".into());
-            }
-            Ok(num)
-        }
-        Err(_) => {
-            return Err("".into());
-        }
-        
+        Ok(n) if n > 0 => Ok(n),
+        _ => Err(format!("illegal list value: \"{}\"", value).into()),
     }
 }
 
 fn parse_pos(range: &str) -> MyResult<PositionList> {
-    println!("---\nrange: {}", range);
     if range.is_empty() {
-        return Err("empty string".into());
+        return Err("empty position list".into());
     }
     
-    let mut result:PositionList = vec![];
-    for value in range.split(',').map(|s| s.trim()) {
-        println!("value: {}", value);
-        if value.is_empty() || value.contains(|c: char| !c.is_numeric() && c != '-') {
-            return Err(format!("illegal list value: \"{}\"", value).into());
+    let mut result = Vec::new();
+    
+    for part in range.split(',').map(str::trim) {
+        if part.is_empty() {
+            return Err("empty field in position list".into());
         }
-
-        let separated_value = value.split('-').collect::<Vec<_>>();
-        if separated_value.len() > 2
-            || separated_value[0].starts_with('+')
-            || (separated_value.len() > 1 && separated_value[1].starts_with('+'))
-        {
-            return Err(format!("illegal list value: \"{}\"", value).into());
-        }
-
-        println!("separated_value: {:?}", separated_value);
-        let mut start_end = vec![0,0];
-        if separated_value.len() == 1 {
-            let number_value = parse_number(separated_value[0]).map_err(|_| {
-                format!("illegal list value: \"{}\"", separated_value[0])
-            })?;
-            start_end[0] = number_value;
-            start_end[1] = number_value;
-        }else if separated_value.len() == 2 {
-            for (i, v) in separated_value.iter().enumerate() {
-                let number_value = parse_number(v).map_err(|_| {
-                    format!("illegal list value: \"{}\"", v)
-                })?;
-                start_end[i] = number_value;
+        
+        // 範囲指定かどうかを確認
+        match part.split('-').collect::<Vec<_>>().as_slice() {
+            // 単一の数値の場合
+            [single] => {
+                // 数値以外が含まれていないか確認
+                if single.chars().any(|c| !c.is_ascii_digit()) {
+                    return Err(format!("illegal list value: \"{}\"", part).into());
+                }
+                
+                let num = parse_number(single)?;
+                result.push((num - 1)..num);
+            },
+            // 範囲指定の場合
+            [start, end] => {
+                // 数値以外が含まれていないか確認
+                if start.chars().any(|c| !c.is_ascii_digit()) || end.chars().any(|c| !c.is_ascii_digit()) {
+                    return Err(format!("illegal list value: \"{}\"", part).into());
+                }
+                
+                let start_num = parse_number(start)?;
+                let end_num = parse_number(end)?;
+                
+                if start_num >= end_num {
+                    return Err(format!(
+                        "First number in range ({}) must be lower than second number ({})",
+                        start_num, end_num
+                    ).into());
+                }
+                
+                result.push((start_num - 1)..end_num);
+            },
+            // その他の場合（不正な書式）
+            _ => {
+                return Err(format!("illegal list value: \"{}\"", part).into());
             }
         }
-        println!("start_end: {:?}", start_end);
-        if separated_value.len() == 2 && start_end[0] >= start_end[1] {
-            return Err(format!(
-                "First number in range ({}) must be lower than second number ({})",
-                start_end[0], start_end[1]
-            )
-            .into());
-        }
-        start_end[0] -= 1;
-        println!("result start_end: {:?}", start_end);
-        result.push(start_end[0]..start_end[1]);
     }
+    
     Ok(result)
 }
 
