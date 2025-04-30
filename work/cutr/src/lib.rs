@@ -43,7 +43,8 @@ pub fn get_args() -> MyResult<Config> {
                 .long("bytes")
                 .short("b")
                 .help("Selected bytes")
-                .takes_value(true),
+                .takes_value(true)
+                .conflicts_with_all(&["fields", "chars"]),
         )
         .arg(
             Arg::with_name("chars")
@@ -51,7 +52,8 @@ pub fn get_args() -> MyResult<Config> {
                 .long("chars")
                 .short("c")
                 .help("Selected characters")
-                .takes_value(true),
+                .takes_value(true)
+                .conflicts_with_all(&["fields", "bytes"]),
         )
         .arg(
             Arg::with_name("fields")
@@ -59,7 +61,8 @@ pub fn get_args() -> MyResult<Config> {
                 .long("fields")
                 .short("f")
                 .help("Selected fields")
-                .takes_value(true),
+                .takes_value(true)
+                .conflicts_with_all(&["bytes", "chars"]),
         )
         .arg(
             Arg::with_name("delimiter")
@@ -67,10 +70,30 @@ pub fn get_args() -> MyResult<Config> {
                 .long("delim")
                 .short("d")
                 .help("Field delimiter")
-                .default_value(" ")
+                .default_value("\t")
                 .takes_value(true),
         )
         .get_matches();
+    
+    let delimiter = matches.value_of("delimiter").unwrap();
+    let delimiter = if delimiter.len() == 1 {
+        delimiter.as_bytes()[0]
+    } else {
+        return Err(format!("--delim \"{}\" must be a single byte", delimiter).into());
+    };
+
+    let extract = if let Some(field) = matches.value_of("fields") {
+        let fields = parse_pos(field)?;
+        Extract::Fields(fields)
+    } else if let Some(bytes) = matches.value_of("bytes") {
+        let bytes = parse_pos(bytes)?;
+        Extract::Bytes(bytes)
+    } else if let Some(chars) = matches.value_of("chars") {
+        let chars = parse_pos(chars)?;
+        Extract::Chars(chars)
+    } else {
+        return Err("Must have --fields, --bytes, or --chars".into());
+    };
 
     Ok(Config {
         files: matches
@@ -78,8 +101,8 @@ pub fn get_args() -> MyResult<Config> {
             .unwrap()
             .map(|s| s.to_string())
             .collect(),
-        delimiter: b'\t',
-        extract: Extract::Fields(vec![0..1]),
+        delimiter,
+        extract,
     })
 }
 
