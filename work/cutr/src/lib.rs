@@ -1,15 +1,12 @@
 use crate::Extract::*;
 use clap::{App, Arg};
-use core::{num, prelude::v1};
-use regex::bytes;
+use csv::{ReaderBuilder, StringRecord};
 use std::{
-    cmp::max,
-    default,
     error::Error,
     fs::File,
     io::{self, BufRead, BufReader},
     num::NonZeroUsize,
-    ops::Range, result,
+    ops::Range,
 };
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -34,20 +31,32 @@ pub fn run(config: Config) -> MyResult<()> {
         match open(filename) {
             Err(err) => eprintln!("{}: {}", filename, err),
             Ok(reader) => {
-                for line in reader.lines() {
-                    let line = line?;
-                    match &config.extract {
-                        Chars(pos) => {
+                match &config.extract {
+                    Chars(pos) => {
+                        reader.lines().for_each(|line| {
+                            let line = line.unwrap();
                             let result = extract_chars(&line, pos);
                             println!("{}", result);
-                        }
-                        Bytes(pos) => {
+                        });
+                    }
+                    Bytes(pos) => {
+                        reader.lines().for_each(|line| {
+                            let line = line.unwrap();
                             let result = extract_bytes(&line, pos);
                             println!("{}", result);
-                        }
-                        _ => {
-
-                        }
+                        });
+                    }
+                    Fields(pos) => {
+                        let delimiter_str = String::from_utf8_lossy(&[config.delimiter.clone()]).to_string();
+                        let mut reader = ReaderBuilder::new()
+                            .has_headers(false)
+                            .delimiter(config.delimiter)
+                            .from_reader(reader);
+                        reader.records().for_each(|line| {
+                            let line = line.unwrap();
+                            let result = extract_fields(&line, pos);
+                            println!("{}", result.join(&delimiter_str));
+                        });
                     }
                 }
             }
@@ -176,6 +185,22 @@ fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
         .collect::<Vec<_>>()
         .join("")
 }
+
+fn extract_fields(record: &StringRecord, field_pos: &[Range<usize>]) -> Vec<String> {
+    field_pos
+        .iter()
+        .map(|pos| {
+            record
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| pos.contains(i))
+                .map(|(_, f)| f.to_string())
+                .collect::<Vec<_>>()
+        })
+        .flatten()
+        .collect::<Vec<_>>()
+}
+
 fn parse_number(value: &str) -> MyResult<usize> {
     match value.parse::<NonZeroUsize>() {
         Ok(n) => Ok(n.into()),
@@ -241,9 +266,8 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
 
 #[cfg(test)]
 mod unit_tests {
-    use super::extract_bytes;
-    use super::extract_chars;
-    use super::parse_pos;
+    use super::{extract_bytes, extract_chars, extract_fields, parse_pos};
+    use csv::StringRecord;
 
     #[test]
     fn test_parse_pos() {
@@ -378,5 +402,15 @@ mod unit_tests {
         assert_eq!(extract_bytes("ábc", &[0..4]), "ábc".to_string());
         assert_eq!(extract_bytes("ábc", &[3..4, 2..3]), "cb".to_string());
         assert_eq!(extract_bytes("ábc", &[0..2, 5..6]), "á".to_string());
+    }
+
+    #[test]
+    fn test_extract_fields() {
+        let rec = StringRecord::from(vec!["Captain", "Sham", "12345"]);
+        assert_eq!(extract_fields(&rec, &[0..1]), &["Captain"]);
+        assert_eq!(extract_fields(&rec, &[1..2]), &["Sham"]);
+        assert_eq!(extract_fields(&rec, &[0..1, 2..3]), &["Captain", "12345"]);
+        assert_eq!(extract_fields(&rec, &[0..1, 3..4]), &["Captain"]);
+        assert_eq!(extract_fields(&rec, &[1..2, 0..1]), &["Sham", "Captain"]);
     }
 }
