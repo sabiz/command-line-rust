@@ -1,7 +1,16 @@
 use crate::Extract::*;
 use clap::{App, Arg};
 use core::{num, prelude::v1};
-use std::{cmp::max, default, error::Error, fs::File, io::{self, BufRead, BufReader}, num::NonZeroUsize, ops::Range};
+use regex::bytes;
+use std::{
+    cmp::max,
+    default,
+    error::Error,
+    fs::File,
+    io::{self, BufRead, BufReader},
+    num::NonZeroUsize,
+    ops::Range, result,
+};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 type PositionList = Vec<Range<usize>>;
@@ -24,7 +33,24 @@ pub fn run(config: Config) -> MyResult<()> {
     for filename in &config.files {
         match open(filename) {
             Err(err) => eprintln!("{}: {}", filename, err),
-            Ok(_) => println!("Opened {}", filename),
+            Ok(reader) => {
+                for line in reader.lines() {
+                    let line = line?;
+                    match &config.extract {
+                        Chars(pos) => {
+                            let result = extract_chars(&line, pos);
+                            println!("{}", result);
+                        }
+                        Bytes(pos) => {
+                            let result = extract_bytes(&line, pos);
+                            println!("{}", result);
+                        }
+                        _ => {
+
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -79,7 +105,7 @@ pub fn get_args() -> MyResult<Config> {
                 .takes_value(true),
         )
         .get_matches();
-    
+
     let delimiter = matches.value_of("delimiter").unwrap();
     let delimiter = if delimiter.len() == 1 {
         delimiter.as_bytes()[0]
@@ -111,25 +137,45 @@ pub fn get_args() -> MyResult<Config> {
     })
 }
 
-
 fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
     match filename {
         "-" => Ok(Box::new(BufReader::new(io::stdin()))),
-        _ => Ok(Box::new(BufReader::new(File::open(filename)?)))
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
     }
 }
 
-
 fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
-    char_pos.iter().map(|pos| {
-        line.chars().enumerate().filter(|(i, _)| pos.contains(i)).map(|(_, c)| c).collect::<String>()
-    }).collect::<Vec<_>>().join("")
+    char_pos
+        .iter()
+        .map(|pos| {
+            line.chars()
+                .enumerate()
+                .filter(|(i, _)| pos.contains(i))
+                .map(|(_, c)| c)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
-    unimplemented!();
+    byte_pos
+        .iter()
+        .map(|pos| {
+            String::from_utf8_lossy(
+                line.as_bytes()
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| pos.contains(i))
+                    .map(|(_, b)| b.clone())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )
+            .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
-
 fn parse_number(value: &str) -> MyResult<usize> {
     match value.parse::<NonZeroUsize>() {
         Ok(n) => Ok(n.into()),
@@ -141,14 +187,14 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
     if range.is_empty() {
         return Err("empty position list".into());
     }
-    
+
     let mut result = Vec::new();
-    
+
     for part in range.split(',').map(str::trim) {
         if part.is_empty() {
             return Err("empty field in position list".into());
         }
-        
+
         // 範囲指定かどうかを確認
         match part.split('-').collect::<Vec<_>>().as_slice() {
             // 単一の数値の場合
@@ -157,44 +203,47 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
                 if single.chars().any(|c| !c.is_ascii_digit()) {
                     return Err(format!("illegal list value: \"{}\"", part).into());
                 }
-                
+
                 let num = parse_number(single)?;
                 result.push((num - 1)..num);
-            },
+            }
             // 範囲指定の場合
             [start, end] => {
                 // 数値以外が含まれていないか確認
-                if start.chars().any(|c| !c.is_ascii_digit()) || end.chars().any(|c| !c.is_ascii_digit()) {
+                if start.chars().any(|c| !c.is_ascii_digit())
+                    || end.chars().any(|c| !c.is_ascii_digit())
+                {
                     return Err(format!("illegal list value: \"{}\"", part).into());
                 }
-                
+
                 let start_num = parse_number(start)?;
                 let end_num = parse_number(end)?;
-                
+
                 if start_num >= end_num {
                     return Err(format!(
                         "First number in range ({}) must be lower than second number ({})",
                         start_num, end_num
-                    ).into());
+                    )
+                    .into());
                 }
-                
+
                 result.push((start_num - 1)..end_num);
-            },
+            }
             // その他の場合（不正な書式）
             _ => {
                 return Err(format!("illegal list value: \"{}\"", part).into());
             }
         }
     }
-    
+
     Ok(result)
 }
 
 #[cfg(test)]
 mod unit_tests {
-    use super::parse_pos;
-    use super::extract_chars;
     use super::extract_bytes;
+    use super::extract_chars;
+    use super::parse_pos;
 
     #[test]
     fn test_parse_pos() {
@@ -318,10 +367,7 @@ mod unit_tests {
         assert_eq!(extract_chars("ábc", &[0..1, 2..3]), "ác".to_string());
         assert_eq!(extract_chars("ábc", &[0..3]), "ábc".to_string());
         assert_eq!(extract_chars("ábc", &[2..3, 1..2]), "cb".to_string());
-        assert_eq!(
-            extract_chars("ábc", &[0..1, 1..2, 4..5]),
-            "áb".to_string()
-        );
+        assert_eq!(extract_chars("ábc", &[0..1, 1..2, 4..5]), "áb".to_string());
     }
 
     #[test]
