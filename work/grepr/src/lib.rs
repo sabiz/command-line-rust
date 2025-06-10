@@ -15,13 +15,34 @@ pub struct Config {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("Pattern: {}", config.pattern);
-
     let entries = find_files(&config.files, config.recursive);
     for entry in entries {
         match entry {
-            Err(e)=> eprintln!("Error: {}", e),
-            Ok(filename) => println!("file: {}", filename),
+            Err(e)=> eprintln!("{}", e),
+            Ok(filename) => match open(&filename) {
+                Err(e) => eprintln!("{}: {}", filename, e),
+                Ok(file) => {
+                    let matches = find_lines(file, &config.pattern, config.invert_match);
+                    match matches {
+                        Err(e) => eprintln!("{}: {}", filename, e),
+                        Ok(lines) => {
+                            if config.count {
+                                if &config.files.len() > &1 || config.recursive {
+                                    print!("{}:", filename);
+                                }
+                                println!("{}", lines.len());
+                            } else {
+                                for line in lines {
+                                    if &config.files.len() > &1 || config.recursive {
+                                       print!("{}:", filename);
+                                    }
+                                    print!("{}", line);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -96,7 +117,7 @@ fn find_files(path: &[String], recursive: bool) -> Vec<MyResult<String>> {
         }
         let path = PathBuf::from(p);
         if !path.exists() {
-            return vec![Err(format!("{} does not exist", p).into())];
+            return vec![Err(format!("{}: does not exist", p).into())];
         }
         if path.is_file() {
             return vec![Ok(p.clone())];
@@ -113,7 +134,16 @@ fn find_files(path: &[String], recursive: bool) -> Vec<MyResult<String>> {
 }
 
 fn find_lines<T: BufRead> (mut file: T, pattern: &Regex, invert_match: bool) -> MyResult<Vec<String>> {
-    unimplemented!();
+    let mut matches = vec![];
+    let mut line = String::new();
+
+    while file.read_line(&mut line)? > 0 {
+        if pattern.is_match(&line) != invert_match {
+            matches.push(std::mem::take(&mut line));
+        }
+        line.clear();
+    }
+    Ok(matches)
 }
 
 fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
