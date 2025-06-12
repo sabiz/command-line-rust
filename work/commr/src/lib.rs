@@ -3,7 +3,7 @@ use std::{
     cmp::Ordering::*,
     error::Error,
     fs::File,
-    io::{self, BufRead, BufReader},
+    io::{self, BufRead, BufReader, Lines}, result,
 };
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -27,14 +27,51 @@ pub fn run(config: Config) -> MyResult<()> {
         return Err(From::from("Both input files cannot be STDIN (\"-\")"));
     }
 
-    let _file1 = open(file1)?;
-    let _file2 = open(file2)?;
-    println!(
-        "Processing files: {} and {}",
-        file1,
-        file2
-    );
+    let mut file1 = open(file1)?;
+    let mut file2 = open(file2)?;
+    
+    
+    loop {
+        let mut line1 = String::new();
+        let file1_size = file1.read_line(&mut line1)?;
+        let line1 = line1.trim_end().to_string();
+        let mut line2 = String::new();
+        let file2_size = file2.read_line(&mut line2)?;
+        let line2 = line2.trim_end().to_string();
 
+        let print_cols = |col1: &str, col2: &str, col3: &str| {
+            if config.show_col1 && !col1.is_empty() {
+                print!("{}", col1);
+            }
+            if config.show_col2 && !col2.is_empty(){
+                print!("{}{}", config.delimiter, col2);
+            }
+            if config.show_col3 && !col3.is_empty(){
+                if config.show_col1 || config.show_col2 {
+                    print!("{}", config.delimiter);
+                }
+                print!("{}{}", config.delimiter, col3);
+            }
+            println!();
+        };
+
+        if file1_size == 0 && file2_size == 0 {
+            break; // End of both files
+        }
+        if line1 == line2 {
+            print_cols("", "", &line1);
+        } else {
+            if file1_size != 0 {
+                print_cols(&line1, "", "");
+            }
+            if file2_size != 0 {
+                print_cols("", &line2, "");
+            }
+        }
+
+
+
+    }
     Ok(())
 }
 
