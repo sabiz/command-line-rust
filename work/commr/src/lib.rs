@@ -1,12 +1,20 @@
+use crate::Column::*;
 use clap::{App, Arg};
 use std::{
     cmp::Ordering::*,
     error::Error,
     fs::File,
-    io::{self, BufRead, BufReader, Lines}, result,
+    io::{self, BufRead, BufReader},
 };
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
+
+#[derive(Debug)]
+enum Column<'a> {
+    Col1(&'a str),
+    Col2(&'a str),
+    Col3(&'a str),
+}
 
 #[derive(Debug)]
 pub struct Config {
@@ -19,6 +27,73 @@ pub struct Config {
     delimiter: String,
 }
 
+// --------------------------------------------------
+pub fn get_args() -> MyResult<Config> {
+    let matches = App::new("commr")
+        .version("0.1.0")
+        .author("Ken Youens-Clark <kyclark@gmail.com>")
+        .about("Rust comm")
+        .arg(
+            Arg::with_name("file1")
+                .value_name("FILE1")
+                .help("Input file 1")
+                .takes_value(true)
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("file2")
+                .value_name("FILE2")
+                .help("Input file 2")
+                .takes_value(true)
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("suppress_col1")
+                .short("1")
+                .takes_value(false)
+                .help("Suppress printing of column 1"),
+        )
+        .arg(
+            Arg::with_name("suppress_col2")
+                .short("2")
+                .takes_value(false)
+                .help("Suppress printing of column 2"),
+        )
+        .arg(
+            Arg::with_name("suppress_col3")
+                .short("3")
+                .takes_value(false)
+                .help("Suppress printing of column 3"),
+        )
+        .arg(
+            Arg::with_name("insensitive")
+                .short("i")
+                .takes_value(false)
+                .help("Case-insensitive comparison of lines"),
+        )
+        .arg(
+            Arg::with_name("delimiter")
+                .short("d")
+                .long("output-delimiter")
+                .value_name("DELIM")
+                .help("Output delimiter")
+                .default_value("\t")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    Ok(Config {
+        file1: matches.value_of("file1").unwrap().to_string(),
+        file2: matches.value_of("file2").unwrap().to_string(),
+        show_col1: !matches.is_present("suppress_col1"),
+        show_col2: !matches.is_present("suppress_col2"),
+        show_col3: !matches.is_present("suppress_col3"),
+        insensitive: matches.is_present("insensitive"),
+        delimiter: matches.value_of("delimiter").unwrap().to_string(),
+    })
+}
+
+// --------------------------------------------------
 pub fn run(config: Config) -> MyResult<()> {
     let file1 = &config.file1;
     let file2 = &config.file2;
@@ -27,117 +102,87 @@ pub fn run(config: Config) -> MyResult<()> {
         return Err(From::from("Both input files cannot be STDIN (\"-\")"));
     }
 
-    let mut file1 = open(file1)?;
-    let mut file2 = open(file2)?;
-    
-    
-    loop {
-        let mut line1 = String::new();
-        let file1_size = file1.read_line(&mut line1)?;
-        let line1 = line1.trim_end().to_string();
-        let mut line2 = String::new();
-        let file2_size = file2.read_line(&mut line2)?;
-        let line2 = line2.trim_end().to_string();
+    let case = |line: String| {
+        if config.insensitive {
+            line.to_lowercase()
+        } else {
+            line
+        }
+    };
 
-        let print_cols = |col1: &str, col2: &str, col3: &str| {
-            if config.show_col1 && !col1.is_empty() {
-                print!("{}", col1);
-            }
-            if config.show_col2 && !col2.is_empty(){
-                print!("{}{}", config.delimiter, col2);
-            }
-            if config.show_col3 && !col3.is_empty(){
-                if config.show_col1 || config.show_col2 {
-                    print!("{}", config.delimiter);
+    let mut lines1 = open(file1)?.lines().filter_map(Result::ok).map(case);
+    let mut lines2 = open(file2)?.lines().filter_map(Result::ok).map(case);
+
+    let print = |col: Column| {
+        let mut columns = vec![];
+        match col {
+            Col1(val) => {
+                if config.show_col1 {
+                    columns.push(val);
                 }
-                print!("{}{}", config.delimiter, col3);
             }
-            println!();
+            Col2(val) => {
+                if config.show_col2 {
+                    if config.show_col1 {
+                        columns.push("");
+                    }
+                    columns.push(val);
+                }
+            }
+            Col3(val) => {
+                if config.show_col3 {
+                    if config.show_col1 {
+                        columns.push("");
+                    }
+                    if config.show_col2 {
+                        columns.push("");
+                    }
+                    columns.push(val);
+                }
+            }
         };
 
-        if file1_size == 0 && file2_size == 0 {
-            break; // End of both files
+        if !columns.is_empty() {
+            println!("{}", columns.join(&config.delimiter));
         }
-        if line1 == line2 {
-            print_cols("", "", &line1);
-        } else {
-            if file1_size != 0 {
-                print_cols(&line1, "", "");
+    };
+
+    let mut line1 = lines1.next();
+    let mut line2 = lines2.next();
+
+    while line1.is_some() || line2.is_some() {
+        match (&line1, &line2) {
+            (Some(val1), Some(val2)) => match val1.cmp(val2) {
+                Equal => {
+                    print(Col3(val1));
+                    line1 = lines1.next();
+                    line2 = lines2.next();
+                }
+                Less => {
+                    print(Col1(val1));
+                    line1 = lines1.next();
+                }
+                Greater => {
+                    print(Col2(val2));
+                    line2 = lines2.next();
+                }
+            },
+            (Some(val1), None) => {
+                print(Col1(val1));
+                line1 = lines1.next();
             }
-            if file2_size != 0 {
-                print_cols("", &line2, "");
+            (None, Some(val2)) => {
+                print(Col2(val2));
+                line2 = lines2.next();
             }
+            _ => (),
         }
-
-
-
     }
+
     Ok(())
 }
 
-pub fn get_args() -> MyResult<Config> {
-    let matches = App::new("commr")
-        .version("0.1.0")
-        .author("John Doe")
-        .about("Rust comm")
-        .arg(
-            Arg::with_name("file1")
-                .value_name("FILE1")
-                .help("Input file 1")
-                .required(true)
-        )
-        .arg(
-            Arg::with_name("file2")
-                .value_name("FILE2")
-                .help("Input file 2")
-                .required(true)
-        )
-        .arg(
-            Arg::with_name("show_col1")
-                .short("1")
-                .help("Suppress printing of column 1")
-                .takes_value(false)
-        )
-        .arg(
-            Arg::with_name("show_col2")
-                .short("2")
-                .help("Suppress printing of column 2")
-                .takes_value(false)
-        )
-        .arg(
-            Arg::with_name("show_col3")
-                .short("3")
-                .help("Suppress printing of column 3")
-                .takes_value(false)
-        )
-        .arg(
-            Arg::with_name("insensitive")
-                .short("i")
-                .help("Case-insensitive comparison of lines")
-                .takes_value(false)
-        )
-        .arg(
-            Arg::with_name("delimiter")
-                .short("d")
-                .long("ouput-delimiter")
-                .value_name("DELIM")
-                .help("Output delimiter")
-                .default_value("\t")
-        )
- 
-        .get_matches();
-
-    Ok(Config {
-        file1: matches.value_of("file1").unwrap().to_string(),
-        file2: matches.value_of("file2").unwrap().to_string(),
-        show_col1: !matches.is_present("show_col1"),
-        show_col2: !matches.is_present("show_col2"),
-        show_col3: !matches.is_present("show_col3"),
-        insensitive: matches.is_present("insensitive"),
-        delimiter: matches.value_of("delimiter").unwrap().to_string(),
-    })
-}
-
+// --------------------------------------------------
 fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
     match filename {
         "-" => Ok(Box::new(BufReader::new(io::stdin()))),
