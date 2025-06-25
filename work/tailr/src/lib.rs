@@ -135,9 +135,10 @@ fn count_lines_bytes(filename: &str) -> MyResult<(i64, i64)> {
 }
 
 fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) -> MyResult<()> {
-    let start_index = get_start_index(num_lines, total_lines)
-        .ok_or_else(|| "")?;
-    // println!("start_index {}, num_lines {:?}, total_lines {}", start_index, num_lines, total_lines);
+    let start_index = get_start_index(num_lines, total_lines).unwrap_or(-1);
+    if start_index < 0 {
+        return Ok(());
+    }
     let mut line = String::new();
     let mut count = 0;
     while let Ok(read_size) = file.read_line(&mut line) {
@@ -157,7 +158,17 @@ fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) 
 }
 
 fn print_bytes<T: Read + Seek>(mut file: T, num_bytes: &TakeValue, total_bytes: i64) -> MyResult<()> {
-    unimplemented!();
+    let start_index = get_start_index(num_bytes, total_bytes).unwrap_or(-1);
+    if start_index < 0 {
+        return Ok(());
+    }
+    file.seek(SeekFrom::Start(start_index as u64))?;
+    let mut buffer = vec![0; (total_bytes - start_index).max(0) as usize];
+    let bytes_read = file.read(&mut buffer)?;
+    if bytes_read > 0 {
+        print!("{}", String::from_utf8_lossy(&buffer[..bytes_read]));
+    }
+    Ok(())
 }
 
 fn get_start_index(take_val: &TakeValue, total: i64) -> Option<i64> {
